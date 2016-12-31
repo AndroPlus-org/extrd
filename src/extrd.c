@@ -75,9 +75,11 @@
  +------------------------------------------------------------------+
  */
 
+#define CHUNKSZ(size)	(size)
+
 int main(int argc, char **argv) {
 	int inf, outf, tbytes, wrbytes, rbytes;
-	int kernelsz, rdsz, pagesz, bufsz, tmp, remsz;
+	int kernelsz, rdsz, pagesz, bufsz = 0, tmp, remsz;
 	char magic[BOOT_MAGIC_SIZE + 1] = { '\0' };
 	char *buf;
 	off_t off;
@@ -130,23 +132,29 @@ int main(int argc, char **argv) {
 		goto out2;
 	}
 
-	if (!(buf = calloc(pagesz + 1, sizeof(char))))
+	if (!(buf = calloc(CHUNKSZ(pagesz) + 1, sizeof(char))))
 		goto out;
 
 	off = ((kernelsz + pagesz - 1) / pagesz) * pagesz + pagesz;
 	(void) lseek(inf, off, SEEK_SET);
 
 	/* Read in pagesz chunks till bufsz (may not be the fastest method, but will reduce memory consumption) */
-	for (tmp = rdsz; tmp > 0; tmp--) {
-		if (tmp % pagesz == 0) {
+	remsz = rdsz - pagesz;
+	for (tmp = rdsz; tmp > remsz; tmp --) {
+		if ((tmp & (pagesz - 1)) == 0) { /* modulo without division */
 			bufsz = tmp;
 			break;
 		}
 	}
 
+	if (bufsz == 0) {
+		fprintf(stderr, "Error: Could not determine upper chunksize aligned read-limit!\n");
+		goto out;
+	}
+
 	/* Read from inf in pagesz chunks till bufsz */
 	for (tbytes = 0; tbytes < bufsz; ) {
-		if ((rbytes = read(inf, buf, pagesz)) != pagesz) {
+		if ((rbytes = read(inf, buf, CHUNKSZ(pagesz))) != CHUNKSZ(pagesz)) {
 			perror("read()");
 			goto out;
 		}
